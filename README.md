@@ -31,9 +31,10 @@ The compiler is built for exactly one target:
   libsanitizer, CLOOG, and initfini-array (the target ground uses the
   older init style).
 
-The one custom compiler mode: `-mstrict-align`, re-wired by patch 001 to
-also switch off `lwl`/`lwr`/`swl`/`swr` generation (the core omits those
-instructions), and defaulted on.
+There is no custom compiler mode for unaligned access: the RLX4181
+executes `lwl`/`lwr`/`swl`/`swr` natively (proven on the real hub
+2026-11-21 - see gotcha 1 below), so GCC is pristine in that respect.
+The project's only shipped GCC patch is 002 (crti/crtn alignment).
 
 The sysroot's C library is a separate recipe, built by the same script:
 uClibc-ng against Linux 2.6.30 kernel headers, with 32-bit time and
@@ -96,11 +97,11 @@ sibling tree:
 ## Required compile/link flags for every binary in this project
 
 ```
--EB -mabi=32 -fno-pie -no-pie -march=mips1 -mfp32 -msoft-float -mstrict-align -fno-builtin
+-EB -mabi=32 -fno-pie -no-pie -march=mips1 -mfp32 -msoft-float -fno-builtin
 ```
 
-`-mstrict-align` is actually the *default* now (patched in `mips.opt`),
-but pass it explicitly anyway for clarity/future-proofing.
+No `-mstrict-align`: the unaligned pair executes natively on this
+core, so GCC is left free to emit it (see gotcha 1 below).
 
 ## Two more gotchas found propagating this fix across all project binaries
 
@@ -110,8 +111,8 @@ already Lexra-native, since it's literally what the real firmware runs.
 A `-static` binary instead bakes in **this toolchain's own copy of
 `libc.a`** (from the sysroot, inherited unchanged from the original
 Bootlin base and never rebuilt with any Lexra patch), which still
-contains raw `lwl`/`lwr`/`swl`/`movz`/`movn` from being built by the
-stock toolchain. `fwd` was reconstructed with `-static` and crashed with
+contains raw `movz`/`movn` (post-MIPS-I opcodes this core lacks)
+from being built by the stock toolchain. `fwd` was reconstructed with `-static` and crashed with
 `Illegal instruction` before printing anything; fixed by simply dropping
 `-static` (no vendor original survived to confirm, but every other
 binary in this project is dynamic, matching uClibc 0.9.30.3 convention,
@@ -139,24 +140,25 @@ C++ and C hello-worlds and a C `atexit()` caller all link at `0x1007`;
 set and NEEDED identical to before. Still compile-level proof only -
 no C++ binary here is hardware-validated yet.
 
-1. **No `lwl`/`lwr`/`swl`/`swr`.** Lexra omits these (patent reasons).
-   Patched `ISA_HAS_LWL_LWR` in `gcc/config/mips/mips.h` to also require
-   `!TARGET_STRICT_ALIGN`, and defaulted `TARGET_STRICT_ALIGN` to on in
-   `gcc/config/mips/mips.opt`.
-
-   Important nuance (confirmed by disassembling the vendor binaries): the
-   *hardware* lacks these instructions, but the shipped firmware still uses
-   them freely - e.g. `sengled_gateway_app` is full of `swl`/`swr` (its packed
-   work-node fields are stored with `swl v1,0x71(v0); swr v1,0x74(v0)`). Those
-   binaries run because the **Realtek kernel emulates** the reserved
-   instructions via a trap handler (vmlinux carries `"Kernel unaligned
-   instruction access"` / `"Unaligned write to reg 0x%08x!, val32=..."`). So a
-   binary containing these opcodes does NOT "fail to execute" on this device -
-   it traps into the emulator and runs (slowly). This project avoids them by
-   choice (`-mstrict-align`, byte-wise access) for speed and cleanliness, not
-   because it is the only way to run; that is why reconstructions that reach a
-   vendor packed struct use byte-safe `memcpy` accessors rather than the
-   vendor's `lwl/lwr/swl/swr`.
+1. **`lwl`/`lwr`/`swl`/`swr` execute natively on the RLX4181.** This
+   project originally assumed the opposite (the old Lexra patent story)
+   and carried a patch 001 gating the pair off behind `-mstrict-align`;
+   that premise is disproven. Proof, on the real hub 2026-11-21: a
+   purpose-built test binary (unaligned loads and stores at every byte
+   offset with bit-exact data checks, plus a 16-byte pair copy loop in
+   the vendor bootcode's own shape) passed every check. The bootcode
+   settles the emulation theory too: it installs its exception handler
+   with an `lwl`/`lwr`/`swl`/`swr` copy *before* any kernel exists, in
+   the window where no trap handler is installed yet - a core lacking
+   the pair would die there every boot. Vendor binaries full of the
+   pair (e.g. `sengled_gateway_app` storing packed work-node fields
+   with `swl v1,0x71(v0); swr v1,0x74(v0)`) simply run natively; no
+   kernel trap emulation is involved. Consequence: patch 001 is
+   deleted, `-mstrict-align` is not used anywhere, and uClibc's
+   arch-optimized string routines (which use the pair) are enabled.
+   The instructions this core genuinely lacks are the ones
+   `scan_bin_for_illegal_lexra` still bans (`movz`/`movn`/`clz`),
+   plus `rdhwr`.
 2. **No load-delay-slot interlocking** (tuned like the original R2000/R3000,
    confirmed by the Lexra GCC patch in
    `sengled-root/reference/rtl8196e-gateway/.../970-Lexra.patch`, which
@@ -350,7 +352,7 @@ top of the Makefile. Minimal Makefile:
 
 ```make
 CC = /path/to/toolchain/bin/mips-buildroot-linux-uclibc-gcc
-CFLAGS = -EB -mabi=32 -fno-pie -no-pie -march=mips1 -mfp32 -msoft-float -mstrict-align -fno-builtin
+CFLAGS = -EB -mabi=32 -fno-pie -no-pie -march=mips1 -mfp32 -msoft-float -fno-builtin
 STRIP = /path/to/toolchain/bin/mips-buildroot-linux-uclibc-strip
 
 all: myprog
@@ -373,7 +375,6 @@ clean:
 | `-mabi=32` | o32 ABI (matches vendor libc) |
 | `-march=mips1` | MIPS-I ISA (no load-delay slots, Lexra-compatible) |
 | `-msoft-float` | No FPU (RTL8196E has none) |
-| `-mstrict-align` | No unaligned loads (Lexra omits `lwl`/`lwr`) |
 | `-fno-pie -no-pie` | Non-PIE executable (loaded at `0x400000`) |
 | `-fno-builtin` | Avoid libc built-in redefinitions |
 

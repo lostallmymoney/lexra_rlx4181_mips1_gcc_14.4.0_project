@@ -2,12 +2,12 @@
 # make-patch.sh - the patch <-> state proof for this project.
 #
 # The repo form of the compiler is: pristine GCC 14.4.0 (fetched
-# from ftp.gnu.org) + patches/001 + patches/002. The built form is
+# from ftp.gnu.org) + patches/002. The built form is
 # the gcc-14.4.0-src/ tree those patches produce. This script proves
 # the two forms are the same thing, and can regenerate one combined
 # patch from the tree.
 #
-#   make-patch.sh          check: apply 001+002 to a fresh pristine
+#   make-patch.sh          check: apply 002 to a fresh pristine
 #                          extract and diff it against the in-tree
 #                          gcc-14.4.0-src - exit 0 iff identical
 #                          (download_prerequisites products are
@@ -57,13 +57,12 @@ PRISTINE="$WORK/gcc-$GCC_VERSION"
 MODE="${1:-check}"
 case "$MODE" in
 check)
-  echo "Applying patches/001 + patches/002 ..."
-  patch -p1 -d "$PRISTINE" < "$HERE/patches/001-lexra-no-lwl-lwr.patch" >/dev/null
+  echo "Applying patches/002 ..."
   patch -p1 -d "$PRISTINE" < "$HERE/patches/002-crti-crtn-alignment.patch" >/dev/null
   echo "Diffing patched pristine vs $SRC ..."
   # shellcheck disable=SC2086
   if diff -r $EXCLUDES "$PRISTINE" "$SRC" > "$WORK/diff.out"; then
-    echo "PATCH = STATE: the two shipped patches reproduce the built tree exactly."
+    echo "PATCH = STATE: the shipped patch reproduces the built tree exactly."
   else
     echo "DIFFERENCES FOUND (also kept in $WORK/diff.out until exit):" >&2
     head -50 "$WORK/diff.out" >&2
