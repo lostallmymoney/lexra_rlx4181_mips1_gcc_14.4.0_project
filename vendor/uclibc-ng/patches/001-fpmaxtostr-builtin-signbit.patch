@@ -1,0 +1,38 @@
+uClibc-ng 1.0.59, libc/stdio/_fpmaxtostr.c: use __builtin_signbit() in
+printf's float formatting instead of the signbit() macro.
+
+signbit() expands to a call to __signbit()/__signbitf()/__signbitl(),
+which live in libm, not libc. On a normal (has-FPU) build,
+bits/mathinline.h silently redefines signbit(x) as an inline builtin,
+so nobody notices this is an external call. On a genuinely FPU-less
+soft-float build (UCLIBC_HAS_FPU=n - this device's Lexra core) no
+such override exists, so it becomes a real call to an undefined
+external symbol - fatal, since libc.so is linked -Wl,-z,defs (no
+undefined symbols allowed). __builtin_signbit() is a compile-time
+bit-test intrinsic: no libm call, no FPU instruction, safe on any
+target. This is a genuine upstream uClibc-ng portability gap for
+no-FPU targets, not anything Lexra-specific. (Recorded since the
+source was vendored; see VANILLArecontruct/rootfs/lib/uclibc-ng/
+manifest.md.)
+
+--- a/libc/stdio/_fpmaxtostr.c
++++ b/libc/stdio/_fpmaxtostr.c
+@@ -252,7 +252,17 @@
+ 	pc_fwi[5] = INF_OFFSET;
+ 	if (isnan(x)) {				/* First, check for nan. */
+ 		pc_fwi[5] = NAN_OFFSET;
+-		if (signbit(x))
++		/* Use __builtin_signbit() instead of the signbit() macro: the
++		 * latter expands to a call to __signbit()/__signbitf()/__signbitl(),
++		 * which live in libm, not libc. On a normal (has-FPU) build,
++		 * bits/mathinline.h silently redefines signbit(x) as an inline
++		 * builtin so this is never noticed; on a no-FPU/soft-float-only
++		 * build (e.g. this device's Lexra core, UCLIBC_HAS_FPU=n) no such
++		 * override exists, so it becomes a genuine call to an undefined
++		 * external symbol - fatal, since libc.so is linked -Wl,-z,defs.
++		 * __builtin_signbit() is a compile-time bit-test intrinsic: no
++		 * libm call, no FPU instruction, safe on any target. */
++		if (__builtin_signbit(x))
+ 			*sign_str = '-';
+ 		goto INF_NAN;
+ 	}

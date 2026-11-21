@@ -1,0 +1,33 @@
+Sanitized Linux 2.6.30 kernel headers (SDK copy), linux/socket.h:
+gate the userspace struct block on __KERNEL__ only.
+
+The 2.6.30 header gates its userspace definitions (struct
+sockaddr/iovec/msghdr and friends) on "!defined(__GLIBC__)", a test
+modern kernel headers replaced with libc-compat.h. Inside a libc
+build _LIBC is defined and __GLIBC__ is deliberately NOT defined,
+so the header defines those structs a second time over
+uClibc-ng's own and libc/inet/if_index.c + ifaddrs.c fail to
+compile. uClibc-ng provides the userspace structs itself; every
+syscall-number header (asm/unistd.h and friends - the actual reason
+for building against these headers) stays byte-identical.
+
+Applied by build-shipped-runtime.sh to its build-time COPY of the
+SDK header tree (build-gcc-uclibc-shipped/kernel-headers) - the
+SDK tree under sources/ itself is never modified.
+
+Provenance: Phase 2 (commit 1894925), where the same edit was
+performed inline by a python snippet in build-shipped-runtime.sh;
+packaged as a patch in Phase 3 so no source adaptation is an
+inline script edit.
+
+--- a/linux/socket.h
++++ b/linux/socket.h
+@@ -16,7 +16,7 @@
+ 				/* _SS_MAXSIZE value minus size of ss_family */
+ } __attribute__ ((aligned(_K_SS_ALIGNSIZE)));	/* force desired alignment */
+ 
+-#if defined(__KERNEL__) || !defined(__GLIBC__) || (__GLIBC__ < 2)
++#if defined(__KERNEL__)
+ 
+ #include <asm/socket.h>			/* arch-dependent defines	*/
+ #include <linux/sockios.h>		/* the SIOCxxx I/O controls	*/

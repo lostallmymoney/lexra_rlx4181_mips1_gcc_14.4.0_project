@@ -1,0 +1,45 @@
+Lexra-family cores (e.g. RTL8196E's RLX4181) implement the base MIPS-I ISA
+but omit lwl/lwr/swl/swr entirely for patent reasons, unlike every other
+pre-R6 MIPS implementation GCC otherwise assumes has them. Reuse the
+existing -mstrict-align flag (TARGET_STRICT_ALIGN) - already user-facing
+and otherwise only wired to R6's ISA_HAS_UNALIGNED_ACCESS - to also gate
+this older, unconditional "every pre-R6 target has lwl/lwr" assumption,
+so -mstrict-align on a pre-R6 target falls back to the safe byte-composed
+sequences already implemented for !ISA_HAS_LWL_LWR throughout
+mips.md/mips.cc instead of emitting lwl/lwr. Also default
+TARGET_STRICT_ALIGN to on, since every binary in this project needs it
+and there is no legitimate use of lwl/lwr for this target.
+
+--- a/gcc/config/mips/mips.h
++++ b/gcc/config/mips/mips.h
+@@ -1191,8 +1191,18 @@
+ 				      && (MODE) == V2SFmode))		\
+ 				 && !TARGET_MIPS16)
+ 
++/* Lexra-family cores (e.g. RTL8196E's RLX4181) implement the base MIPS-I
++   ISA but omit lwl/lwr/swl/swr entirely for patent reasons, unlike every
++   other pre-R6 MIPS implementation GCC otherwise assumes has them. Reuse
++   the existing -mstrict-align flag (TARGET_STRICT_ALIGN) - already
++   user-facing and otherwise only wired to R6's ISA_HAS_UNALIGNED_ACCESS -
++   to also gate this older, unconditional "every pre-R6 target has
++   lwl/lwr" assumption, so -mstrict-align on a pre-R6 target falls back to
++   the safe byte-composed sequences already implemented for !ISA_HAS_LWL_LWR
++   throughout mips.md/mips.cc instead of emitting lwl/lwr. */
+ #define ISA_HAS_LWL_LWR		(mips_isa_rev <= 5 \
+-				 && (!TARGET_MIPS16 || ISA_HAS_MIPS16E2))
++				 && (!TARGET_MIPS16 || ISA_HAS_MIPS16E2) \
++				 && !TARGET_STRICT_ALIGN)
+ 
+ #define ISA_HAS_IEEE_754_LEGACY	(mips_isa_rev <= 5)
+ 
+--- a/gcc/config/mips/mips.opt
++++ b/gcc/config/mips/mips.opt
+@@ -430,7 +430,7 @@
+ -mtune=PROCESSOR	Optimize the output for PROCESSOR.
+ 
+ mstrict-align
+-Target Var(TARGET_STRICT_ALIGN) Init(0)
++Target Var(TARGET_STRICT_ALIGN) Init(1)
+ Don't generate code with unaligned load store, only valid for MIPS R6.
+ 
+ munaligned-access

@@ -1,0 +1,47 @@
+uClibc-ng 1.0.59, include/features.h: restore the 1.0.54 conditional
+_FILE_OFFSET_BITS behaviour (the Option-C edit).
+
+Upstream 1.0.59 forced _FILE_OFFSET_BITS=64 for every consumer of
+these headers, renaming the plain file calls to their *64 forms.
+The programs this toolchain builds run against the hub's vendor
+uClibc 0.9.30.3, which serves the plain entry points but never
+exported getrlimit64, setrlimit64, lstat64, lockf64, mkstemp64,
+mmap64 or freopen64 - every rebuilt program importing one of those
+names dies at load time on the hub. This library's own runtime
+does not bind the vendor runtime, so upstream's support policy
+for its own libc does not apply here: the *64 interface applies
+only when a program defines _FILE_OFFSET_BITS=64 itself.
+build-toolchain.sh asserts the patched state survives into the
+installed sysroot header, and apply-patches.sh verifies it in the
+source copy before every build.
+
+Provenance: commit f808564 ("uClibc-ng headers: make 64-bit file
+offsets opt-in again").
+
+--- a/include/features.h
++++ b/include/features.h
+@@ -340,12 +340,19 @@
+ # define __USE_LARGEFILE64	1
+ #endif
+ 
+-#if defined _FILE_OFFSET_BITS && _FILE_OFFSET_BITS != 64
+-# error "_FILE_OFFSET_BITS != 64 is not supported by uClibc-ng"
++/* Sengled: upstream 1.0.59 forced _FILE_OFFSET_BITS=64 here for every
++   consumer of these headers. The programs this toolchain builds run
++   against the hub's vendor uClibc 0.9.30.3, which serves the plain
++   entry points but never exported getrlimit64, setrlimit64, lstat64,
++   lockf64, mkstemp64, mmap64 or freopen64 - so the 1.0.54 conditional
++   is restored: the *64 interface applies only when a program asks
++   for it itself. This library never ships (only its headers reach
++   consumer builds), so upstream's support policy for its own libc
++   does not bind the vendor runtime. build-toolchain.sh asserts this
++   edit survives into the installed sysroot header. */
++#if defined _FILE_OFFSET_BITS && _FILE_OFFSET_BITS == 64
++# define __USE_FILE_OFFSET64	1
+ #endif
+-#undef  _FILE_OFFSET_BITS
+-#define _FILE_OFFSET_BITS	64
+-#define __USE_FILE_OFFSET64	1
+ 
+ #if defined _BSD_SOURCE || defined _SVID_SOURCE
+ # define __USE_MISC	1

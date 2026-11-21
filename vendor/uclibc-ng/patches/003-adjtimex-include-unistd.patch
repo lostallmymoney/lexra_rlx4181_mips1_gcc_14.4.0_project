@@ -1,0 +1,29 @@
+uClibc-ng 1.0.59, libc/sysdeps/linux/common/adjtimex.c: include
+<unistd.h> so syscall() is declared when building against the hub's
+2.6.30 kernel headers.
+
+With the 2.6.30 headers __NR_clock_adjtime does not exist, so the
+syscall(__NR_adjtimex, ...) branch is taken - and nothing in that
+header set declares syscall() any more (modern headers pulled
+<unistd.h> in transitively). Forced by the v29 shipped build's
+KERNEL_HEADERS switch to the SDK's sanitized 2.6.30 tree; proven
+necessary by the Phase 2 build (the only socket/time-family
+compile failure of its class left after the kernel-headers
+linux/socket.h guard patch).
+
+Provenance: commit 1894925 (v29 shipped runtime).
+
+--- a/libc/sysdeps/linux/common/adjtimex.c
++++ b/libc/sysdeps/linux/common/adjtimex.c
+@@ -9,6 +9,11 @@
+ #include <sys/syscall.h>
+ #include <sys/timex.h>
+ #include <time.h>
++/* Sengled edit (v29 shipped build): with the hub's 2.6.30 kernel
++ * headers __NR_clock_adjtime does not exist, so the syscall() branch
++ * below is taken - and nothing in that header set declares syscall()
++ * any more (modern headers pulled <unistd.h> in transitively). */
++#include <unistd.h>
+ 
+ int adjtimex(struct timex *buf)
+ {

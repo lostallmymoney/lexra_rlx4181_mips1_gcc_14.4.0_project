@@ -1,0 +1,44 @@
+Rebuilding crti.o/crtn.o with -march=mips1 silently drops their .init/.fini
+section alignment from 4 to 1 (GAS's implicit default appears to depend on
+ISA level). Since crti.o's .init section is first in the linker's merged
+.init output section, this can misalign the final _init symbol/DT_INIT to
+an odd address - fatal (SIGILL) for binaries where that lands on an odd
+byte offset. Add an explicit .align 2 so this can't happen regardless of
+assembler defaults.
+
+--- a/libgcc/config/mips/crti.S
++++ b/libgcc/config/mips/crti.S
+@@ -28,6 +28,7 @@
+    Return spill offset of 40 and 20.  Aligned to 16 bytes for n32.  */
+ 
+ 	.section .init,"ax",@progbits
++	.align 2
+ 	.globl	_init
+ 	.type	_init,@function
+ _init:
+@@ -40,6 +41,7 @@
+ #endif
+ 
+ 	.section .fini,"ax",@progbits
++	.align 2
+ 	.globl	_fini
+ 	.type	_fini,@function
+ _fini:
+--- a/libgcc/config/mips/crtn.S
++++ b/libgcc/config/mips/crtn.S
+@@ -34,6 +34,7 @@
+ #endif
+ 
+ 	.section .init,"ax",@progbits
++	.align 2
+ init:	
+ #ifdef __mips64
+ 	ld      RA,40($sp)
+@@ -45,6 +46,7 @@
+ 	j	RA
+ 
+ 	.section .fini,"ax",@progbits
++	.align 2
+ fini:	
+ #ifdef	__mips64
+ 	ld	RA,40($sp)
