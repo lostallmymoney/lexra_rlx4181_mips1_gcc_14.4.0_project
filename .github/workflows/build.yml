@@ -1,0 +1,114 @@
+name: build
+
+# Every push and pull request builds the compiler and uploads it as
+# a downloadable artifact. Pushing a version tag (v1.0.0, ...) also
+# publishes a GitHub Release carrying two zips: the built toolchain
+# and the fully patched project (this repo plus the pristine GCC
+# 14.4.0 source with patches/001 + patches/002 applied and the
+# build prerequisites downloaded - the exact tree build-toolchain.sh
+# compiles, ready to build offline).
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (the GCC build needs the room)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+          df -h /
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential curl xz-utils python3 \
+            bison flex m4 patch locales zip file
+
+      - name: Build the compiler
+        run: ./build-toolchain.sh
+
+      - name: Prove the compiler (stamp, Graphite, legality scan)
+        run: |
+          . ./env.sh
+          "$CC" --version | head -1 | grep -q "(Sengled-lexra-patched-2026) 14.4.0"
+          "$CC" $LEXRA_CFLAGS -O3 -floop-nest-optimize -o /tmp/loop-test tests/loop.c
+          OUT="$(scan_bin_for_illegal_lexra /tmp/loop-test)"
+          if [ -n "$OUT" ]; then
+            echo "Lexra-illegal opcodes in the test binary:" >&2
+            echo "$OUT" >&2
+            exit 1
+          fi
+          echo "Compiler proven: stamp OK, -floop-nest-optimize accepted, scan clean."
+
+      - name: Zip the toolchain
+        run: zip -qr lexra-toolchain-gcc-14.4.0.zip toolchain
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lexra-toolchain
+          path: lexra-toolchain-gcc-14.4.0.zip
+          retention-days: 90
+
+  patched-zip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl xz-utils patch zip
+
+      - name: Build the fully patched GCC source tree
+        run: |
+          curl -fsSL -o /tmp/gcc-14.4.0.tar.xz \
+            https://ftp.gnu.org/gnu/gcc/gcc-14.4.0/gcc-14.4.0.tar.xz
+          tar --no-same-owner -xf /tmp/gcc-14.4.0.tar.xz
+          mv gcc-14.4.0 gcc-14.4.0-src
+          patch -p1 -d gcc-14.4.0-src < patches/001-lexra-no-lwl-lwr.patch
+          patch -p1 -d gcc-14.4.0-src < patches/002-crti-crtn-alignment.patch
+          ( cd gcc-14.4.0-src && ./contrib/download_prerequisites )
+
+      - name: Zip the fully patched project
+        run: zip -qr lexra_rlx4181_mips1_gcc_14.4.0_project-full.zip . -x ".git/*"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lexra-fully-patched-project
+          path: lexra_rlx4181_mips1_gcc_14.4.0_project-full.zip
+          retention-days: 90
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, patched-zip]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish the release with both zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          mv artifacts/lexra-toolchain-gcc-14.4.0.zip \
+             "artifacts/lexra-toolchain-gcc-14.4.0-$TAG.zip"
+          mv artifacts/lexra_rlx4181_mips1_gcc_14.4.0_project-full.zip \
+             "artifacts/lexra_rlx4181_mips1_gcc_14.4.0_project-full-$TAG.zip"
+          gh release create "$TAG" artifacts/*.zip \
+            --title "Lexra GCC 14.4.0 $TAG" \
+            --generate-notes
