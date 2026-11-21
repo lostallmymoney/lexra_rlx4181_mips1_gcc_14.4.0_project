@@ -21,16 +21,16 @@ export STRIP="${SENGLED_TOOLCHAIN}/bin/mips-buildroot-linux-uclibc-strip"
 export OBJDUMP="${SENGLED_TOOLCHAIN}/bin/mips-buildroot-linux-uclibc-objdump"
 export READELF="${SENGLED_TOOLCHAIN}/bin/mips-buildroot-linux-uclibc-readelf"
 
-# mips1/soft-float/strict-align are the toolchain's own configure-time
+# mips1/soft-float are the toolchain's own configure-time
 # defaults now (see README.md), but every project Makefile still passes
 # these explicitly for clarity - do the same in quick manual builds.
-export LEXRA_CFLAGS="-EB -mabi=32 -fno-pie -no-pie -march=mips1 -mfp32 -msoft-float -mstrict-align -fno-builtin"
+export LEXRA_CFLAGS="-EB -mabi=32 -fno-pie -no-pie -march=mips1 -mfp32 -msoft-float -fno-builtin"
 export LEXRA_LDFLAGS="-EB -mabi=32 -fno-pie -no-pie -march=mips1 -mfp32 -msoft-float"
 
 # Quick sanity check: scan a binary for Lexra-unsupported opcodes.
 # Usage: scan_bin_for_illegal_lexra <path-to-binary>
 scan_bin_for_illegal_lexra() {
-    "$OBJDUMP" -d "$1" | grep -oiE '\blwl\b|\blwr\b|\bswl\b|\bswr\b|\bmovz\b|\bmovn\b|\bclz\b' | sort | uniq -c
+    "$OBJDUMP" -d "$1" | grep -oiE '\bmovz\b|\bmovn\b|\bclz\b' | sort | uniq -c
 }
 
 echo "Sengled Lexra toolchain ready: CC=$CC"

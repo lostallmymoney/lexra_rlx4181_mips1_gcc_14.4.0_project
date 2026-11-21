@@ -49,8 +49,6 @@ if [ ! -d "$HERE/gcc-$GCC_VERSION-src" ]; then
   curl -sL -o "/tmp/gcc-$GCC_VERSION.tar.xz" "https://ftp.gnu.org/gnu/gcc/gcc-$GCC_VERSION/gcc-$GCC_VERSION.tar.xz"
   tar --no-same-owner -C "$HERE" -xf "/tmp/gcc-$GCC_VERSION.tar.xz"
   mv "$HERE/gcc-$GCC_VERSION" "$HERE/gcc-$GCC_VERSION-src"
-  echo "Applying patches/001-lexra-no-lwl-lwr.patch ..."
-  patch -p1 -d "$HERE/gcc-$GCC_VERSION-src" < "$HERE/patches/001-lexra-no-lwl-lwr.patch"
   echo "Applying patches/002-crti-crtn-alignment.patch ..."
   patch -p1 -d "$HERE/gcc-$GCC_VERSION-src" < "$HERE/patches/002-crti-crtn-alignment.patch"
   ( cd "$HERE/gcc-$GCC_VERSION-src" && ./contrib/download_prerequisites )
@@ -133,8 +131,10 @@ SYSROOT="$TC/mips-buildroot-linux-uclibc/sysroot"
 # libc build of the whole project (the unification Camille
 # proposed, v42): the sysroot the families compile against and
 # the runtime the image ships are this one build, on the shipped
-# ground - the hub's 2.6.30 kernel headers, the generic C string
-# routines, and the LINUXTHREADS thread model. Not NPTL: the
+# ground - the hub's 2.6.30 kernel headers, the arch-optimized
+# string routines (their lwl/lwr/swl/swr execute natively on the
+# RLX4181 - proven on the real hub 2026-11-21), and the
+# LINUXTHREADS thread model. Not NPTL: the
 # hub's ground has no native TLS, and a libstdc++ configured
 # against an NPTL libc imports __tls_get_addr, which nothing on
 # the hub provides (the v35 ship-gate failure). Before the
@@ -266,9 +266,13 @@ if ! { [ -f "$SYSROOT_CFG" ] \
       #    structures this libc is built against are the hub's.
       sed -i 's|^KERNEL_HEADERS=.*|KERNEL_HEADERS="'"$KERNEL_HEADERS_DIR"'"|' .config
       grep -q '^KERNEL_HEADERS=' .config || echo 'KERNEL_HEADERS="'"$KERNEL_HEADERS_DIR"'"' >> .config
-      # 2. generic C string routines - the arch-optimized ones
-      #    target a newer MIPS than the hub's Lexra core.
-      sed -i 's|^UCLIBC_HAS_STRING_ARCH_OPT=y|# UCLIBC_HAS_STRING_ARCH_OPT is not set|' .config
+      # 2. arch-optimized string routines ON - their lwl/lwr/
+      #    swl/swr unaligned accesses execute natively on the
+      #    RLX4181 (proven on the real hub 2026-11-21: the
+      #    pairtest binary passed at every offset). The fragment
+      #    already sets UCLIBC_HAS_STRING_ARCH_OPT=y; keep the
+      #    generic routines enabled too for the functions that
+      #    have no arch version.
       grep -q '^UCLIBC_HAS_STRING_GENERIC_OPT=y' .config \
           || sed -i 's|^# UCLIBC_HAS_STRING_GENERIC_OPT is not set|UCLIBC_HAS_STRING_GENERIC_OPT=y|' .config
       # 3. linuxthreads, not NPTL - the hub's thread ground (see
@@ -283,8 +287,8 @@ if ! { [ -f "$SYSROOT_CFG" ] \
       # carried; a silent drift here poisons every consumer).
       grep -q '^KERNEL_HEADERS="'"$KERNEL_HEADERS_DIR"'"' .config || {
         echo "ERROR: sysroot .config does not carry the hub KERNEL_HEADERS" >&2; exit 1; }
-      grep -q '^# UCLIBC_HAS_STRING_ARCH_OPT is not set' .config || {
-        echo "ERROR: sysroot .config still enables arch string routines" >&2; exit 1; }
+      grep -q '^UCLIBC_HAS_STRING_ARCH_OPT=y' .config || {
+        echo "ERROR: sysroot .config does not enable arch string routines" >&2; exit 1; }
       grep -q '^UCLIBC_HAS_LINUXTHREADS=y' .config || {
         echo "ERROR: sysroot .config is not on the linuxthreads model" >&2; exit 1; }
       grep -q '^# UCLIBC_HAS_THREADS_NATIVE is not set' .config || {

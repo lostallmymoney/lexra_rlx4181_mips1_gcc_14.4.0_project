@@ -18,10 +18,10 @@
  *   conditional loop nest with a data-dependent if inside.
  *   nonaffine   inner bound driven by the data itself - Graphite
  *               must NOT transform this one; the control snippet.
- *   packed      walk over a packed struct array - what makes the
- *               poison build (-mno-strict-align) emit lwl/lwr/
- *               swl/swr; clean builds compose the same accesses
- *               from byte loads under -mstrict-align.
+ *   packed      walk over a packed struct array - the unaligned
+ *               accesses the lwl/lwr/swl/swr pair serves (the
+ *               RLX4181 executes the pair natively - proven on
+ *               the real hub 2026-11-21).
  */
 #include <stdio.h>
 #include <string.h>

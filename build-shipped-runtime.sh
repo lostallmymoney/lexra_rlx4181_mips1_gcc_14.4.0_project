@@ -22,8 +22,7 @@
 #     __tls_get_addr import - the orphaned native-TLS import
 #     that nothing on the shipped ground provides (the v35
 #     ship-gate failure this build exists to prevent);
-#   - the Lexra gate on the promoted set: zero lwl/lwr/swl/swr
-#     and zero rdhwr encodings.
+#   - the Lexra gate on the promoted set: zero rdhwr encodings.
 #
 # Called by HUMAN_SCRIPTS/2.1_BUILD_NEW_ROOTFS.sh when the
 # promotion is missing (step 2.1 promotes the runtime it
@@ -98,22 +97,17 @@ promote "$LIBC_SRC" "libuClibc-1.0.59.so"
 promote "$LIBGCC_S" "libgcc_s.so.1"
 promote "$LIBSTDCXX" "libstdc++.so.6"
 
-# Lexra gate on the whole shipped runtime set: zero forbidden
-# opcodes. lwl/lwr/swl/swr do not exist on the Lexra core; rdhwr
-# traps to a kernel that does not emulate it. The lwl-class
-# check greps objdump mnemonics - those are MIPS-I instructions
-# and render as themselves. rdhwr must NOT be checked that way:
-# this toolchain's objdump targets MIPS-I and renders rdhwr as
+# Lexra gate on the whole shipped runtime set: zero rdhwr
+# instructions - rdhwr traps to a kernel that does not emulate
+# it on this platform. (lwl/lwr/swl/swr are NOT gated: the
+# RLX4181 executes the unaligned pair natively - proven on the
+# real hub 2026-11-21, the pairtest binary passing at every
+# offset.) rdhwr must NOT be checked by mnemonic: this
+# toolchain's objdump targets MIPS-I and renders rdhwr as
 # '.word 0x7c03e83b', so a mnemonic grep is blind to it (proven
 # on the NPTL sysroot libc: 915 encodings, 0 mnemonics). The
 # rdhwr check therefore scans executable sections for the
 # instruction encoding itself: SPECIAL3, rs=0, funct 0x3B.
-for f in ld-uClibc-1.0.59.so libuClibc-1.0.59.so libgcc_s.so.1 libstdc++.so.6; do
-    hits="$("$OBJDUMP" -d "$PROMO/$f" | grep -c -E '\b(lwl|lwr|swl|swr)\b' || true)"
-    [ "$hits" = "0" ] || {
-        echo "ERROR: $f carries $hits Lexra-forbidden instructions - refusing to promote" >&2; exit 1; }
-    echo "  Lexra census $f: 0"
-done
 python3 - "$PROMO" <<'PYEOF'
 import os, struct, sys
 promo = sys.argv[1]

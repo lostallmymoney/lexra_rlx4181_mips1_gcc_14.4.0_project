@@ -95,6 +95,16 @@ over speed is this whole project's stated priority. No other files
 under `libc/string/mips/` exist besides these two, so this option only
 affects memcpy/memset.
 
+**Reversed 2026-11-21:** the premise above is disproven. A test
+binary built full of `lwl`/`lwr`/`swl`/`swr` (unaligned loads and
+stores at every byte offset, bit-exact data checks, plus a 16-byte
+pair copy loop) ran on the real hub and passed every check - the
+RLX4181 executes the pair natively (the vendor bootcode also runs
+it before any kernel exists, in the window where its exception
+handler is not yet installed, so no trap emulation can explain it
+either). `UCLIBC_HAS_STRING_ARCH_OPT` is enabled again in
+build-toolchain.sh; the arch-optimized memcpy/memset are back.
+
 ## Config choices and why (iteration-driven, found via `iperf` test-builds)
 
 Two config options in `uClibc.config` are on that a minimal/default
